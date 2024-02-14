@@ -28,8 +28,8 @@ last_message = {
     'time': datetime_to_json(datetime.now()),
     'status': 200,
     'appointmentDates': [],
+    'lastAppointmentsFoundOn': None,
 }
-
 
 timezone = pytz.timezone('Europe/Berlin')
 
@@ -52,14 +52,14 @@ def get_appointments_url(service_page_url: str):
 
 async def get_appointments(appointments_url: str, email: str, script_id: str) -> list:
     """
-    Fetches the appointments calendar on Berlin.de, parses it, and returns available appointment dates.
+    Fetch the appointments calendar on Berlin.de, parse it, and return appointment dates.
     """
     today = timezone.localize(datetime.now())
     next_month = timezone.localize(datetime(today.year, today.month % 12 + 1, 1))
     next_month_timestamp = int(next_month.timestamp())
 
     async with aiohttp.ClientSession(raise_for_status=True) as session:
-        # Load the first two months
+        # Load the first two calendar pages
         async with session.get(appointments_url, headers=get_headers(email, script_id), timeout=20) as response_page1:
             page1_dates = parse_appointment_dates(await response_page1.text())
 
@@ -72,10 +72,10 @@ async def get_appointments(appointments_url: str, email: str, script_id: str) ->
 
 def parse_appointment_dates(page_content: str) -> list:
     """
-    Parse the content of the calendar page on Berlin.de, and returns available appointment dates.
+    Parse the content of the calendar page on Berlin.de, return available appointments.
     """
     appointment_strainer = SoupStrainer('td', class_='buchbar')
-    bookable_cells = BeautifulSoup(page_content, 'lxml', parse_only=appointment_strainer).find_all('a')
+    bookable_cells = BeautifulSoup(page_content, 'html.parser', parse_only=appointment_strainer).find_all('a')
     appointment_dates = []
     for bookable_cell in bookable_cells:
         timestamp = int(bookable_cell['href'].rstrip('/').split('/')[-1])
@@ -85,6 +85,9 @@ def parse_appointment_dates(page_content: str) -> list:
 
 
 async def look_for_appointments(appointments_url: str, email: str, script_id: str, quiet: bool) -> dict:
+    """
+    Look for appointments, return a response dict
+    """
     try:
         appointments = await get_appointments(appointments_url, email, script_id)
         logger.info(f"Found {len(appointments)} appointments: {[datetime_to_json(d) for d in appointments]}")
@@ -162,6 +165,13 @@ async def watch_for_appointments(service_page_url: str, email: str, script_id: s
     async with websockets.serve(on_connect, port=server_port):
         logger.info(f"Server is running on port {server_port}. Looking for appointments every {refresh_delay} seconds.")
         while True:
+            last_appts_found_on = last_message['lastAppointmentsFoundOn']
             last_message = await look_for_appointments(appointments_url, email, script_id, quiet)
+            if last_message['appointmentDates']:
+                last_message['lastAppointmentsFoundOn'] = datetime_to_json(datetime.now())
+            else:
+                last_message['lastAppointmentsFoundOn'] = last_appts_found_on
+
             websockets.broadcast(connected_clients, json.dumps(last_message))
+
             await asyncio.sleep(refresh_delay)

@@ -5,7 +5,7 @@ long_description = (Path(__file__).parent / "README.md").read_text()
 
 setup(
     name='berlin-appointment-finder',
-    version='1.0.4',
+    version='1.1.0',
     description='Finds appointments at the Berlin Bürgeramt, broadcasts them via websockets',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -22,7 +22,6 @@ setup(
         'chime==0.7.0',
         'pytz',
         'websockets==10.1',
-        'lxml==4.7.1',
     ],
     zip_safe=False,
 )
